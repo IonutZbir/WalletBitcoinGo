@@ -1,29 +1,17 @@
 package main
 
 import (
-	"BitcoinParser/src/block"
-	"encoding/hex"
 	"fmt"
-	"log"
+
+	keymanager "wallet-bitcoin/src/key_manager"
 )
 
 func main() {
-
-	hex_block := "00000120892bd903087355158164339df69332fd413e99ad820f00000000000000000000baef6518eff11d4923b4d6d298918ee4de4b75825c1cebcf67f33031fe4748589664e76969130217323e3c09"
-
-	rawBytes, err := hex.DecodeString(hex_block)
+	mnemonic, seed, err := keymanager.GenerateSeedEnt128()
 	if err != nil {
-		log.Fatalf("Errore decodifica hex: %v", err)
+		fmt.Println("error:", err)
+		return
 	}
-
-	blk := block.Parse(rawBytes)
-	fmt.Println(blk.ToString())
-
-	fmt.Printf("Target: %v\n", blk.ComputeTarget())
-
-	fmt.Printf("Serialized Block Data: %v\n", blk.GetSerializedBlockHeaderHex())
-
-	fmt.Printf("Hash: %v\n", blk.GetHashHex())
-
-	fmt.Printf("Block is Valid? %v\n", blk.IsValid())
+	fmt.Println("mnemonic:", mnemonic)
+	fmt.Printf("seed: %x\n, len: %d\n", seed, len(seed))
 }

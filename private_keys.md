@@ -31,6 +31,8 @@ Nota: la mnemonic **non viene decodificata all'indietro** per ricavare la seed â
 
 ## 2. BIP32 â€” Gerarchia deterministica di chiavi (HD Wallet)
 
+- https://github.com/btcsuite/btcd/tree/master/btcutil/hdkeychain
+
 ### Step 1: Master key da seed
 $$I = \text{HMAC-SHA512}(\text{key}=\text{"Bitcoin seed"}, \; \text{data}=\text{seed})$$
 $$I_L = \text{primi 32 byte} = \text{master private key } k_{master}$$

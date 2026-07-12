@@ -201,3 +201,15 @@ Se si invia a entrambi i canali, è normale che il secondo tentativo risponda co
 | Broadcast | `sendrawtransaction` | `POST /api/tx` |
 | Verifica conferma | `gettransaction` | `GET /api/tx/{txid}` |
 | Stato mempool | `getmempoolentry` | (dashboard pubblica) |
+
+## RIASSUNTO
+
+1. Genera/importa mnemonic (BIP39) → seed
+2. Deriva master key (BIP32)
+3. Deriva account key m/84'/0'/0', poi un paio di indirizzi fissi (indice 0, 1)
+4. Mostra gli indirizzi all'utente ("manda fondi qui per testare")
+5. Query al nodo: quali UTXO ci sono su questi indirizzi? (listunspent o scantxoutset)
+6. L'utente specifica: destinatario + importo
+7. Costruisci tx (seleziona UTXO semplice, calcola resto)
+8. Firma con BIP143
+9. sendrawtransaction al nodo
