@@ -1,8 +1,13 @@
 package utils
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"math/big"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -78,4 +83,68 @@ func ValidPrivateScalar(b []byte) bool {
 		return false
 	}
 	return v.Cmp(CurveOrder) < 0
+}
+
+func VarInt2Int(reader *bytes.Reader) (uint64, error) {
+	var firstByte [1]byte
+	_, err := io.ReadFull(reader, firstByte[:])
+	if err != nil {
+		log.Fatalf("Failed to read the first byte to convert the number: %v\n", err)
+	}
+
+	firstInt := uint8(firstByte[0])
+
+	if firstInt <= 252 {
+		return uint64(firstInt), nil
+	}
+	if firstInt == 253 {
+		var bytes [2]byte
+		_, err := io.ReadFull(reader, bytes[:])
+		if err != nil {
+			log.Fatalf("Failed to read the first 3 bytes to convert the number: %v\n", err)
+		}
+		return uint64(binary.LittleEndian.Uint16(bytes[:])), nil
+	}
+	if firstInt == 254 {
+		var bytes [4]byte
+		_, err := io.ReadFull(reader, bytes[:])
+		if err != nil {
+			log.Fatalf("Failed to read the first 5 bytes to convert the number: %v\n", err)
+		}
+		return uint64(binary.LittleEndian.Uint32(bytes[:])), nil
+	}
+	if firstInt == 255 {
+		var bytes [8]byte
+		_, err := io.ReadFull(reader, bytes[:])
+		if err != nil {
+			log.Fatalf("Failed to read the first 9 bytes to convert the number: %v\n", err)
+		}
+		return binary.LittleEndian.Uint64(bytes[:]), nil
+	}
+
+	return 0, fmt.Errorf("invalid varint format")
+}
+
+func WriteVarInt(buf *bytes.Buffer, n uint64) {
+	switch {
+	case n < 0xfd:
+		buf.WriteByte(byte(n))
+	case n <= 0xffff:
+		buf.WriteByte(0xfd)
+		binary.Write(buf, binary.LittleEndian, uint16(n))
+	case n <= 0xffffffff:
+		buf.WriteByte(0xfe)
+		binary.Write(buf, binary.LittleEndian, uint32(n))
+	default:
+		buf.WriteByte(0xff)
+		binary.Write(buf, binary.LittleEndian, n)
+	}
+}
+
+func ReverseBytes(b []byte) []byte {
+	reversed := make([]byte, len(b))
+	for i := range b {
+		reversed[len(b)-1-i] = b[i]
+	}
+	return reversed
 }

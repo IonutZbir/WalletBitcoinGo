@@ -36,15 +36,18 @@ Vantaggi: fee più basse (witness discount), sighash BIP143 evita il problema de
 
 ## Struttura essenziale di una transazione da implementare
 
-1. **Selezione UTXO** — scegli gli input da spendere (algoritmo banale: somma finché copri importo+fee)
+1. **Selezione UTXO** — scegli gli input da spendere
 2. **Costruzione output** — destinatario + eventuale change
 3. **Serializzazione** — version(4) + [marker+flag se SegWit] + input count + inputs + output count + outputs + [witness se SegWit] + locktime(4)
 4. **Calcolo sighash** per ogni input (BIP143 se SegWit)
 5. **Firma ECDSA** (o Schnorr se in futuro vuoi Taproot/BIP340, ma per ora niente)
 6. **Costruzione scriptSig/witness** finale
-7. **Broadcast** (via RPC a un nodo, o API tipo Blockstream/mempool.space)
+8. **Broadcast** (via RPC a un nodo, o API tipo Blockstream/mempool.space)
 
 ---
+
+1. **Coin Selection:** Questa è la parte più complessa per creare una transazione, ossia capire quali UTXO scegliere per creare gli input. Gli wallet professionali, come Bitcoin Wallet, Electrum utilizzano algoritmi tipo Branch and Bound. Per questo progetto, si è scelto un approccio Greedy, ossia, dato un indirizzo, si ordinano le UTXO in ordine crescente. (spiegare poi meglio i vantaggi e gli svantaggi di tutto ciò)
+
 
 ## Librerie Go di riferimento (anche solo da leggere, non necessariamente da usare)
 
