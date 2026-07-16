@@ -112,6 +112,6 @@ func (w *Wallet) Send(amount int, core bool, destAddr string, sourceAddr keymana
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("Transaction broadcasted successfully")
 	return nil
 }
