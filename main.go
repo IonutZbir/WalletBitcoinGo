@@ -152,5 +152,5 @@ func main() {
 		Path:       nil,
 	}
 	err := wallet.Send(3000, false, "mrmM2yFqNuzKhXZzEyhXG1dJ5aonL6pnmi", src)
-	fmt.Print(err)
+	fmt.Println(err)
 }

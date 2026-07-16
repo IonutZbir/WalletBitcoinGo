@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 )
 
 const MEMPOOLTESTURL = "https://mempool.space/testnet/api/"
+const MEMPOOLTEST4URL = "https://mempool.space/testnet4/api/"
 
 type MempoolApi struct{}
 
@@ -32,7 +34,7 @@ func (m *MempoolApi) GetTx(txId string) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("response failed with status code: %d and\nbody: %v\n", res.StatusCode, data)
 	}
 
-	return nil, nil
+	return data, nil
 }
 func (m *MempoolApi) GetTxVout(txId string) ([]interface{}, error) {
 
@@ -69,7 +71,6 @@ func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.U
 		var utxo types.Utxo
 		utxo.TxId = u["txid"].(string)
 		utxo.Vout = u["vout"].(float64)
-
 		txVouts, err := m.GetTxVout(utxo.TxId)
 		if err != nil {
 			return nil, err
@@ -117,7 +118,9 @@ func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.U
 }
 
 func (m *MempoolApi) GetRecommendedFees() (*types.Fees, error) {
-	reqUrl := fmt.Sprintf("%sv1/fees/recommended", MEMPOOLTESTURL)
+	reqUrl := fmt.Sprintf("%sv1/fees/recommended", MEMPOOLTEST4URL)
+
+	fmt.Println(reqUrl)
 	resp, err := http.Get(reqUrl)
 	if err != nil {
 		return nil, err
@@ -227,4 +230,13 @@ func (m *MempoolApi) GetInputs(amount int, address keymanager.Address) ([]TxInBu
 	}
 
 	return selectedInputs, fee, change, nil
+}
+
+func (m *MempoolApi) BroadcastTransaction(tx *transactions.Tx) error {
+	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
+	_, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(tx.SerializeHex()))
+	if err != nil {
+		return fmt.Errorf("failed to broadcast transaction: %v", err)
+	}
+	return nil
 }
