@@ -2,6 +2,7 @@ package api
 
 import (
 	keymanager "wallet-bitcoin/src/key_manager"
+	"wallet-bitcoin/src/transactions"
 	"wallet-bitcoin/src/types"
 )
 
@@ -11,4 +12,5 @@ type Api interface {
 	GetTxVout(txId string) ([]interface{}, error)
 	GetRecommendedFees() (types.Fees, error)
 	GetInputs(amount int, address keymanager.Address) ([]TxInBuild, int, int, error)
+	BroadcastTransaction(tx *transactions.Tx) error
 }

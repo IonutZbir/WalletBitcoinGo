@@ -1,0 +1,20 @@
+{
+  "mnemonic": [
+    "truth",
+    "student",
+    "metal",
+    "ceiling",
+    "island",
+    "execute",
+    "ready",
+    "valve",
+    "maple",
+    "nasty",
+    "canoe",
+    "unveil"
+  ],
+  "seed": "139f405ce57dd71361ccfda4ac152317a4f290d44b084c42367650b3a2f1b8fa1e70066228f4de7cfb6e8889d59f7ac62b06fcfa336b63437ba376d5f4a309b0",
+  "address": "mnuboMXaD6XSWHnBzwhEQXDBawJnvPkXzs",
+  "signingKey": "11c5216655f553076862e368746ae68a0dc5191efa2fa3443678b7fdee2cb211",
+  "pubKeyHash": "511156e2be502c223a3e45c27c1d18525a7a4867"
+}

@@ -34,6 +34,24 @@ func newTxIn(previousTxHash [TxInPreviousTxHashSize]byte, previousTxIndex [TxInP
 	}
 }
 
+// build getters
+
+func (in *TxIn) PreviousTxHash() [TxInPreviousTxHashSize]byte {
+	return in.previousTxHash
+}
+
+func (in *TxIn) PreviousTxIndex() [TxInPreviousTxIndexSize]byte {
+	return in.previousTxIndex
+}
+
+func (in *TxIn) ScriptSig() []byte {
+	return in.scriptSig
+}
+
+func (in *TxIn) Sequence() [TxInSequenceSize]byte {
+	return in.sequence
+}
+
 func NewTxIn(txidHex string, vout uint32, sequence uint32) (TxIn, error) {
 	txidBytes, err := hex.DecodeString(txidHex)
 	if err != nil {

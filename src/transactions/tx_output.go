@@ -26,6 +26,15 @@ func newTxOut(value [TxOutValueSize]byte, pkScript []byte) TxOut {
 	}
 }
 
+// getters
+func (tx *TxOut) Value() int64 {
+	return int64(binary.BigEndian.Uint64(tx.value[:]))
+}
+
+func (tx *TxOut) PkScript() []byte {
+	return tx.pkScript
+}
+
 func NewTxOut(valueSats int64, pkScript []byte) TxOut {
 	var value [TxOutValueSize]byte
 	binary.BigEndian.PutUint64(value[:], uint64(valueSats))

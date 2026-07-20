@@ -52,6 +52,16 @@ func NewTx(inputs []TxIn, outputs []TxOut) Tx {
 	return newTx(version, inputs, outputs, locktime)
 }
 
+// GetInputs returns the inputs of the transaction
+func (tx *Tx) GetInputs() []TxIn {
+	return tx.inputs
+}
+
+// GetOutputs returns the outputs of the transaction
+func (tx *Tx) GetOutputs() []TxOut {
+	return tx.outputs
+}
+
 // Parsing Tx
 func ParseTx(byteString []byte) Tx {
 	reader := bytes.NewReader(byteString)

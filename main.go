@@ -7,150 +7,144 @@ import (
 	"log"
 	"os"
 
-	wallet "wallet-bitcoin/src"
 	keymanager "wallet-bitcoin/src/key_manager"
+
+	wallet "wallet-bitcoin/src"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 )
 
-func generateDemoWallet() {
+type WalletDemo struct {
+	Mnemonic   []string `json:"mnemonic"`
+	Seed       string   `json:"seed"`
+	Address    string   `json:"address"`
+	SigningKey string   `json:"signingKey"`
+	PubKeyHash string   `json:"pubKeyHash"`
+}
+
+func toWalletDemo(mnemonic []string, seed []byte, addr *keymanager.Address) WalletDemo {
+	return WalletDemo{
+		Mnemonic:   mnemonic,
+		Seed:       fmt.Sprintf("%x", seed),
+		Address:    addr.Address,
+		SigningKey: fmt.Sprintf("%x", addr.SigningKey),
+		PubKeyHash: fmt.Sprintf("%x", addr.PubKeyHash),
+	}
+}
+
+func writeWalletJson(filename string, wallet WalletDemo) error {
+	data, err := json.MarshalIndent(wallet, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	if err := os.WriteFile(filename, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", filename, err)
+	}
+	return nil
+}
+
+func generateDemoWallet() error {
 	mnemonic, seed, err := keymanager.GenerateSeedEnt128()
 	if err != nil {
-		fmt.Println("error: ", err)
-		return
+		return fmt.Errorf("failed to generate seed: %w", err)
 	}
 
 	fmt.Println("mnemonic:", mnemonic)
-	fmt.Printf("seed: %x\n, len: %d\n", seed, len(seed))
+	fmt.Printf("seed: %x\nlen: %d\n", seed, len(seed))
 
 	master, err := keymanager.NewMasterKey(seed[:])
 	if err != nil {
-		fmt.Println("error: ", err)
+		return fmt.Errorf("failed to derive master key: %w", err)
 	}
 
-	path0 := []uint32{
-		44 + keymanager.HardenedOffset,
-		0 + keymanager.HardenedOffset,
-		0 + keymanager.HardenedOffset,
-		0,
-		0,
-	}
-
-	key_path0, err := keymanager.DeriveKeyPath(master, path0)
+	// Indirizzo 0 di ricezione, legacy e segwit, mainnet e testnet
+	addressLegacyMain, err := keymanager.DeriveLegacyAddress(
+		master, keymanager.NetworkMainnet, keymanager.ChainExternal, 0)
 	if err != nil {
-		fmt.Println("error: ", err)
+		return fmt.Errorf("failed to derive legacy mainnet address: %w", err)
 	}
-	addressMain, err := keymanager.DeriveLegacyAddress(key_path0, false)
-	addressTest, err := keymanager.DeriveLegacyAddress(key_path0, true)
+
+	addressLegacyTest, err := keymanager.DeriveLegacyAddress(
+		master, keymanager.NetworkTestnet, keymanager.ChainExternal, 0)
 	if err != nil {
-		fmt.Println("error: ", err)
+		return fmt.Errorf("failed to derive legacy testnet address: %w", err)
 	}
 
-	type WalletDemo struct {
-		Mnemonic   []string `json:"mnemonic"`
-		Seed       string   `json:"seed"`
-		Address    string   `json:"address"`
-		SigningKey string   `json:"signingKey"`
-		PubKeyHash string   `json:"pubKeyHash"`
-	}
-
-	walletMain := WalletDemo{
-		Mnemonic:   mnemonic[:],
-		Seed:       fmt.Sprintf("%x", seed),
-		Address:    addressMain.Address,
-		SigningKey: fmt.Sprintf("%x", addressMain.SigningKey),
-		PubKeyHash: fmt.Sprintf("%x", addressMain.PubKeyHash),
-	}
-
-	walletTest := WalletDemo{
-		Mnemonic:   mnemonic[:],
-		Seed:       fmt.Sprintf("%x", seed),
-		Address:    addressTest.Address,
-		SigningKey: fmt.Sprintf("%x", addressTest.SigningKey),
-		PubKeyHash: fmt.Sprintf("%x", addressTest.PubKeyHash),
-	}
-
-	walletMainJson, err := json.MarshalIndent(walletMain, "", "  ")
+	addressSegwitMain, err := keymanager.DeriveSegwitAddress(
+		master, keymanager.NetworkMainnet, keymanager.ChainExternal, 0)
 	if err != nil {
-		log.Fatalf("Failed to marshal Json: %v", err)
+		return fmt.Errorf("failed to derive segwit mainnet address: %w", err)
 	}
 
-	walletTestJson, err := json.MarshalIndent(walletTest, "", "  ")
+	addressSegwitTest, err := keymanager.DeriveSegwitAddress(
+		master, keymanager.NetworkTestnet, keymanager.ChainExternal, 0)
 	if err != nil {
-		log.Fatalf("Failed to marshal Json: %v", err)
+		return fmt.Errorf("failed to derive segwit testnet address: %w", err)
 	}
 
-	err = os.WriteFile("WalletMain.json", walletMainJson, 0644)
-	if err != nil {
-		log.Fatalf("Failed to write to file: %v", err)
-	}
+	walletLegacyMain := toWalletDemo(mnemonic[:], seed[:], addressLegacyMain)
+	walletLegacyTest := toWalletDemo(mnemonic[:], seed[:], addressLegacyTest)
+	walletSegwitMain := toWalletDemo(mnemonic[:], seed[:], addressSegwitMain)
+	walletSegwitTest := toWalletDemo(mnemonic[:], seed[:], addressSegwitTest)
 
-	err = os.WriteFile("WalletTest.json", walletTestJson, 0644)
-	if err != nil {
-		log.Fatalf("Failed to write to file: %v", err)
+	if err := writeWalletJson("WalletMainLegacy.json", walletLegacyMain); err != nil {
+		return err
+	}
+	if err := writeWalletJson("WalletTestLegacy.json", walletLegacyTest); err != nil {
+		return err
+	}
+	if err := writeWalletJson("WalletMainSegwit.json", walletSegwitMain); err != nil {
+		return err
+	}
+	if err := writeWalletJson("WalletTestSegwit.json", walletSegwitTest); err != nil {
+		return err
 	}
 
 	log.Println("JSON successfully written")
+	return nil
 }
 
-func skToWif() {
-	// Your raw hex secret key
+func skToWif() error {
 	skHex := "d124ebf7c4a1d335de47d81530ae81c5949ebf5945e09abce8a1a15d3076df33"
 
 	skBytes, err := hex.DecodeString(skHex)
 	if err != nil {
-		log.Fatalf("Failed to decode hex: %v", err)
+		return fmt.Errorf("failed to decode hex: %w", err)
 	}
 
-	// Create a private key object
 	privKey, _ := btcec.PrivKeyFromBytes(skBytes)
 
-	// Create a Testnet WIF (true = compressed public key)
 	wif, err := btcutil.NewWIF(privKey, &chaincfg.TestNet3Params, true)
 	if err != nil {
-		log.Fatalf("Failed to create WIF: %v", err)
+		return fmt.Errorf("failed to create WIF: %w", err)
 	}
 
-	// This is the string you will paste into Electrum!
 	fmt.Printf("Your Testnet WIF is: %s\n", wif.String())
+	return nil
 }
 
 func main() {
-	// generateDemoWallet()
-	//skToWif()
-	//transaction.TestBuildTransaction()
-	// _, err := transaction.GetUtxoMempool("mw9xUefbEeFWis9u84y3HFMc42aDoKBqSM")
-	// if err != nil {
+	// if err := generateDemoWallet(); err != nil {
 	// 	log.Fatal(err)
 	// }
 
-	// txId := "eefbafa4006e77099db059eebe14687965813283e5754d317431d9984554735d"
-	// address := "mw9xUefbEeFWis9u84y3HFMc42aDoKBqSM"
-	// address := "mrmM2yFqNuzKhXZzEyhXG1dJ5aonL6pnmi"
-	// transaction "wallet-bitcoin/src/transactions"
-	// utxos, err :=  GetUtxoMempool(address)
-	// if err != nil {
+	// if err := skToWif(); err != nil {
 	// 	log.Fatal(err)
 	// }
-
-	// for t := range utxos {
-	// 	fmt.Printf("%s\n", utxos[t].ToString())
-	// }
-
-	// _, _, _, _ = transaction.(3000, address)
-
-	sk, _ := hex.DecodeString("d124ebf7c4a1d335de47d81530ae81c5949ebf5945e09abce8a1a15d3076df33")
-
-	wallet := wallet.NewWallet()
-	src := keymanager.Address{
-		SigningKey: sk,
-		PubKeyHash: nil,
-		Address:    "mw9xUefbEeFWis9u84y3HFMc42aDoKBqSM",
-		Legacy:     true,
-		Path:       nil,
+	name := "walletTestNet1"
+	password := "prova"
+	testnet := false
+	w, err := wallet.NewWalletFromScratch(name, password, testnet)
+	if err != nil {
+		log.Fatal(err)
 	}
-	err := wallet.Send(3000, false, "mrmM2yFqNuzKhXZzEyhXG1dJ5aonL6pnmi", src)
-	fmt.Println(err)
+	log.Println("Wallet initialized successfully")
+	// log.Println("Wallet address:", w.ReceiversLegacyAddresses)
+	// log.Println("Wallet address:", w.ReceiversSegwitAddresses)
+	log.Println("Wallet Mnemonic:", w.Mnemonic)
+	log.Println("Wallet Seed:", w.Seed)
+	log.Println("Wallet Xpub:", w.Xpub)
+	log.Println("Wallet Xprv:", w.Xprv)
 }
