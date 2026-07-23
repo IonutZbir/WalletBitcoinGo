@@ -16,6 +16,8 @@ type Utxo struct {
 	Vout         float64
 	Value        int
 	PubKeyScript PubKeyScript
+	PrivateKey   []byte
+	// Path - posso ricavare direttamente la pk dalla master key, cosi da non memorizzarla in chiaro
 }
 
 type UtxoByValue []Utxo

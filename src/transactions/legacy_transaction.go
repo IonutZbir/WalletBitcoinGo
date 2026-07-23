@@ -125,6 +125,14 @@ func (tx *Tx) SerializeHex() string {
 	return hex.EncodeToString(tx.Serialize())
 }
 
+func (tx *Tx) ComputeTxID() string {
+	serialized := tx.Serialize()
+	hash := utils.Hash256(serialized)
+
+	return fmt.Sprintf("%x", utils.ReverseBytes(hash[:]))
+
+}
+
 func (tx *Tx) ToJson() ([]byte, error) {
 	data := make(map[string]any)
 	data["version"] = hex.EncodeToString(tx.version[:])

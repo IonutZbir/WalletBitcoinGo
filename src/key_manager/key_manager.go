@@ -65,6 +65,11 @@ type Address struct {
 	Address    string   `json:"address"`
 	Legacy     bool     `json:"legacy"`
 	Path       []uint32 `json:"path"`
+	Balance    int64    `json:"balance"`
+}
+
+func (addr Address) String() string {
+	return addr.Address
 }
 
 func DeriveKeyPath(master *ExtendedKey, path []uint32) (*ExtendedKey, error) {

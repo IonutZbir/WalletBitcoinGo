@@ -1,15 +1,11 @@
-package src
+package wallet
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"wallet-bitcoin/src/api"
 	keymanager "wallet-bitcoin/src/key_manager"
 	"wallet-bitcoin/src/transactions"
@@ -17,7 +13,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"golang.org/x/crypto/scrypt"
 )
 
 const (
@@ -26,8 +21,6 @@ const (
 	NumChangeLegacyAddresses = 5
 	NumChangeSegwitAddresses = 5
 	NumAddresses             = NumLegacyAddresses + NumSegwitAddresses + NumChangeLegacyAddresses + NumChangeSegwitAddresses
-
-	baseDirName = ".walletbitcoingo"
 )
 
 type Wallet struct {
@@ -36,7 +29,7 @@ type Wallet struct {
 	ReceiversSegwitAddresses map[string]keymanager.Address
 	ChangeLegacyAddresses    map[string]keymanager.Address
 	ChangeSegwitAddresses    map[string]keymanager.Address
-	Balance                  int
+	Balance                  []api.Balance
 	Testnet                  bool
 	Mempool                  api.MempoolApi
 	BtcCore                  api.BtcCoreApi
@@ -48,122 +41,73 @@ type Wallet struct {
 	Xprv                     []byte
 }
 
-type CryptoEnvelope struct {
-	Cipher     string                 `json:"cipher"`
-	Ciphertext []byte                 `json:"ciphertext"`
-	Nonce      []byte                 `json:"nonce"`
-	KDF        string                 `json:"kdf"`
-	KDFParams  map[string]interface{} `json:"kdfparams"`
-}
+func (w *Wallet) String() string {
+	var builder strings.Builder
 
-func (w *Wallet) newDataToStore() (json.RawMessage, error) {
-	data := map[string]interface{}{
-		"keystore": map[string]interface{}{
-			"type":     "bip32",
-			"mnemonic": w.Mnemonic,
-			"seed":     w.Seed,
-			"xpub":     w.Xpub,
-			"xprv":     w.Xprv,
-		},
-		"receivers": map[string]map[string]keymanager.Address{
-			"legacy": w.ReceiversLegacyAddresses,
-			"segwit": w.ReceiversSegwitAddresses,
-		},
-		"change": map[string]map[string]keymanager.Address{
-			"legacy": w.ChangeLegacyAddresses,
-			"segwit": w.ChangeSegwitAddresses,
-		},
+	// Mappa address -> balance per lookup O(1) dentro printAddressMap
+	balanceByAddress := make(map[string]int64, len(w.Balance))
+	var totalBalance int64
+	for _, b := range w.Balance {
+		balanceByAddress[b.Address] = b.Balance
+		totalBalance += b.Balance
 	}
 
-	fmt.Println("Data stored on disk:", data)
+	// Header details
+	fmt.Fprintf(&builder, "Path: %s\nTestnet: %t\nBalance: %d satoshis\n", w.Path, w.Testnet, totalBalance)
 
-	bytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling wallet data: %w", err)
+	// Format Mnemonic array
+	fmt.Fprintf(&builder, "Mnemonic: %s %s %s %s %s %s %s %s %s %s %s %s\n",
+		w.Mnemonic[0], w.Mnemonic[1], w.Mnemonic[2], w.Mnemonic[3],
+		w.Mnemonic[4], w.Mnemonic[5], w.Mnemonic[6], w.Mnemonic[7],
+		w.Mnemonic[8], w.Mnemonic[9], w.Mnemonic[10], w.Mnemonic[11],
+	)
+
+	// Total count
+	totalAddresses := len(w.ReceiversLegacyAddresses) + len(w.ReceiversSegwitAddresses) +
+		len(w.ChangeLegacyAddresses) + len(w.ChangeSegwitAddresses)
+	fmt.Fprintf(&builder, "Total Addresses (%d):\n", totalAddresses)
+
+	// Helper to print address maps, including the balance for each address
+	printAddressMap := func(label string, addrMap map[string]keymanager.Address) {
+		if len(addrMap) == 0 {
+			return
+		}
+		fmt.Fprintf(&builder, "  -- %s --\n", label)
+		for key, addr := range addrMap {
+			bal, ok := balanceByAddress[key]
+			if !ok {
+				fmt.Fprintf(&builder, "    %v (balance unknown)\n", addr)
+				continue
+			}
+			fmt.Fprintf(&builder, "    %v — %d satoshis\n", addr, bal)
+		}
 	}
+	printAddressMap("Receivers (Legacy)", w.ReceiversLegacyAddresses)
+	printAddressMap("Receivers (SegWit)", w.ReceiversSegwitAddresses)
+	printAddressMap("Change (Legacy)", w.ChangeLegacyAddresses)
+	printAddressMap("Change (SegWit)", w.ChangeSegwitAddresses)
 
-	return json.RawMessage(bytes), nil
-}
-
-func (w *Wallet) EncryptAndSaveWallet(password string, filePath string) error {
-	rawData, err := w.newDataToStore()
-	if err != nil {
-		return fmt.Errorf("error preparing wallet data: %w", err)
-	}
-
-	salt := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return fmt.Errorf("error generating salt: %w", err)
-	}
-
-	// Derivazione chiave AES-256 via scrypt (Parametri standard: N=262144, r=8, p=1, keyLen=32)
-	key, err := scrypt.Key([]byte(password), salt, 262144, 8, 1, 32)
-	if err != nil {
-		return fmt.Errorf("error deriving AES key: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return fmt.Errorf("error creating AES cipher: %w", err)
-	}
-
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return fmt.Errorf("error creating GCM: %w", err)
-	}
-
-	nonce := make([]byte, aesGCM.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("error generating nonce: %w", err)
-	}
-
-	ciphertext := aesGCM.Seal(nil, nonce, rawData, nil)
-
-	envelope := CryptoEnvelope{
-		Cipher:     "aes-256-gcm",
-		Ciphertext: ciphertext,
-		Nonce:      nonce,
-		KDF:        "scrypt",
-		KDFParams: map[string]interface{}{
-			"n":      262144,
-			"r":      8,
-			"p":      1,
-			"keyLen": 32,
-			"salt":   salt,
-		},
-	}
-
-	jsonData, err := json.MarshalIndent(envelope, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error serializing JSON envelope: %w", err)
-	}
-
-	// Salva con permessi di lettura/scrittura esclusivi dell'utente (0600)
-	if err := os.WriteFile(filePath, jsonData, 0600); err != nil {
-		return fmt.Errorf("error saving file to disk: %w", err)
-	}
-
-	return nil
+	return builder.String()
 }
 
 func NewWalletFromScratch(name string, password string, testnet bool) (*Wallet, error) {
-	// 1. Risolvi il percorso assoluto della Home directory dell'utente
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("error finding home directory: %w", err)
-	}
-
-	walletDir := filepath.Join(homeDir, baseDirName, name)
-	if err := os.MkdirAll(walletDir, 0700); err != nil {
-		return nil, fmt.Errorf("error creating wallet directory: %w", err)
-	}
-
-	walletFilePath := filepath.Join(walletDir, name+".json")
-
-	// 2. Genera Mnemonic ed Entropia Seed
-	mnemonic, seed, err := keymanager.GenerateSeedEnt128()
+	mnemonic, _, err := keymanager.GenerateSeedEnt128()
 	if err != nil {
 		return nil, fmt.Errorf("error generating seed: %w", err)
+	}
+
+	return NewWalletFromMnemonic(name, password, testnet, mnemonic)
+}
+
+func NewWalletFromMnemonic(name string, password string, testnet bool, mnemonic [12]string) (*Wallet, error) {
+	walletFilePath, err := getWalletPath(name)
+	if err != nil {
+		return nil, fmt.Errorf("error getting wallet path: %w", err)
+	}
+
+	seed, err := keymanager.GenerateSeedFromMnemonic(mnemonic[:])
+	if err != nil {
+		return nil, fmt.Errorf("error generating seed from mnemonic: %w", err)
 	}
 
 	// 3. Genera il Master Key BIP-32
@@ -185,7 +129,7 @@ func NewWalletFromScratch(name string, password string, testnet bool) (*Wallet, 
 		ReceiversSegwitAddresses: make(map[string]keymanager.Address, NumSegwitAddresses),
 		ChangeLegacyAddresses:    make(map[string]keymanager.Address, NumChangeLegacyAddresses),
 		ChangeSegwitAddresses:    make(map[string]keymanager.Address, NumChangeSegwitAddresses),
-		Balance:                  0,
+		Balance:                  make([]api.Balance, 0),
 		Testnet:                  testnet,
 		Mempool:                  api.MempoolApi{},
 		BtcCore:                  api.BtcCoreApi{},
@@ -238,32 +182,49 @@ func NewWalletFromScratch(name string, password string, testnet bool) (*Wallet, 
 		return nil, fmt.Errorf("error encrypting and saving wallet: %w", err)
 	}
 
+	core := false
+	w.getBalance(core)
+
 	return w, nil
+
 }
 
-func (w *Wallet) buildInputsLegacy(amount int, core bool, address keymanager.Address) ([]api.TxInBuild, int, int, error) {
-	if amount < 0 {
+// func NewWalletFromPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
+// func (w *Wallet) ImportPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
+
+func getWalletPath(name string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("error finding home directory: %w", err)
+	}
+
+	walletDir := filepath.Join(homeDir, baseDirName, name)
+	if err := os.MkdirAll(walletDir, 0700); err != nil {
+		return "", fmt.Errorf("error creating wallet directory: %w", err)
+	}
+
+	walletFilePath := filepath.Join(walletDir, name+".json")
+	return walletFilePath, nil
+}
+
+func (w *Wallet) buildInputsLegacy(amount int, core bool) ([]api.TxInBuild, int, int, error) {
+	if amount <= 0 {
 		return nil, 0, 0, fmt.Errorf("amount must be > 0")
 	}
 
-	var (
-		inputs []api.TxInBuild
-		fee    int
-		change int
-		err    error
-	)
-	// TODO: for every address inside the wallet
+	// make a map of addresses to use for UTXO selection
+	addresses := make(map[string]keymanager.Address)
+	for _, addr := range w.ReceiversLegacyAddresses {
+		addresses[addr.Address] = addr
+	}
+	for _, addr := range w.ChangeLegacyAddresses {
+		addresses[addr.Address] = addr
+	}
+
 	if core {
-		inputs, fee, change, err = w.BtcCore.GetInputs(amount, address)
-	} else {
-		inputs, fee, change, err = w.Mempool.GetInputs(amount, address)
+		return w.BtcCore.GetInputs(amount, addresses)
 	}
-
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
-	return inputs, fee, change, nil
+	return w.Mempool.GetInputs(amount, addresses)
 }
 
 func (w *Wallet) buildOutputsLegacy(amount int, change int, destAddr string, changeAddr keymanager.Address) ([]transactions.TxOut, error) {
@@ -276,20 +237,20 @@ func (w *Wallet) buildOutputsLegacy(amount int, change int, destAddr string, cha
 
 	myOutput := transactions.NewTxOut(int64(amount), pkScript)
 
-	addrChangeDecoded, err := btcutil.DecodeAddress(changeAddr.Address, &chaincfg.TestNet3Params)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode the destination address: %v", err)
 	}
-	pkScriptChange := transactions.P2PKHScript(addrChangeDecoded.ScriptAddress())
+	pkScriptChange := transactions.P2PKHScript(changeAddr.PubKeyHash)
 
 	myOutputChange := transactions.NewTxOut(int64(change), pkScriptChange)
 	return []transactions.TxOut{myOutput, myOutputChange}, nil
 }
 
-func (w *Wallet) signInputsLegacy(tx *transactions.Tx, inputsBuild []api.TxInBuild, privKey []byte) error {
+func (w *Wallet) signInputsLegacy(tx *transactions.Tx, inputsBuild []api.TxInBuild) error {
 	for i, txInBuild := range inputsBuild {
 		pubKeyScript := txInBuild.PubKeyScript
 		prevScriptPubKey, err := hex.DecodeString(pubKeyScript.Script)
+		privKey := txInBuild.PrivateKey
 		if err != nil {
 			return fmt.Errorf("cannot decode prevScriptPubKey: %v", err)
 		}
@@ -298,7 +259,7 @@ func (w *Wallet) signInputsLegacy(tx *transactions.Tx, inputsBuild []api.TxInBui
 	return nil
 }
 
-func (w *Wallet) SendLegacy(amount int, core bool, destAddr string, sourceAddr string) error {
+func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, error) {
 	/*
 		1. Find the UTXO
 		2. Compute the fee
@@ -308,31 +269,74 @@ func (w *Wallet) SendLegacy(amount int, core bool, destAddr string, sourceAddr s
 		6. Broadcast
 
 	*/
-
-	inputsBuild, _, change, err := w.buildInputsLegacy(amount, core, w.ReceiversLegacyAddresses[sourceAddr])
+	// non devo specificare sourceAddr, il wallet deve usare tutti gli address
+	// TODO: usare tutti gli address del wallet
+	inputsBuild, _, change, err := w.buildInputsLegacy(amount, core)
 	if err != nil {
-		return fmt.Errorf("could not get inputs: %v", err)
+		return "", fmt.Errorf("could not get inputs: %v", err)
 	}
 
-	outputs, err := w.buildOutputsLegacy(amount, change, destAddr, w.ReceiversLegacyAddresses[sourceAddr])
+	// chose random change address
+	changeAddr, err := w.randomChangeAddress()
 	if err != nil {
-		return fmt.Errorf("could not build outputs: %v", err)
+		return "", fmt.Errorf("could not get change address: %v", err)
+	}
+	outputs, err := w.buildOutputsLegacy(amount, change, destAddr, changeAddr)
+	if err != nil {
+		return "", fmt.Errorf("could not build outputs: %v", err)
 	}
 
 	inputs := api.ExtractTxIns(inputsBuild)
 
 	tx := transactions.NewTx(inputs, outputs)
 	// for every address, i need to get the relative private key
-	err = w.signInputsLegacy(&tx, inputsBuild, w.ReceiversLegacyAddresses[sourceAddr].SigningKey)
+	err = w.signInputsLegacy(&tx, inputsBuild)
+	if err != nil {
+		return "", fmt.Errorf("could not sign inputs: %v", err)
+	}
+
+	txId, err := w.Mempool.BroadcastTransaction(&tx)
+	if err != nil {
+		return "", fmt.Errorf("could not broadcast transaction: %v", err)
+	}
+	return txId, nil
+}
+
+func (w *Wallet) randomChangeAddress() (keymanager.Address, error) {
+	if len(w.ChangeLegacyAddresses) == 0 {
+		return keymanager.Address{}, fmt.Errorf("no change addresses available")
+	}
+
+	// Ranging over a Go map starts at a random bucket every time
+	for _, addr := range w.ChangeLegacyAddresses {
+		return addr, nil // Returns the very first item hit in the randomized loop
+	}
+
+	return keymanager.Address{}, fmt.Errorf("no change addresses available")
+}
+
+func (w *Wallet) getBalance(core bool) error {
+	allAddresses := make(map[string]keymanager.Address)
+	for k, v := range w.ReceiversLegacyAddresses {
+		allAddresses[k] = v
+	}
+	for k, v := range w.ChangeLegacyAddresses {
+		allAddresses[k] = v
+	}
+	// + segwit se applicabile
+
+	var balance []api.Balance
+	var err error
+	if core {
+		balance, err = w.BtcCore.ComputeBalanceForAddresses(allAddresses)
+	} else {
+		balance, err = w.Mempool.ComputeBalanceForAddresses(allAddresses)
+	}
 	if err != nil {
 		return err
 	}
 
-	err = w.Mempool.BroadcastTransaction(&tx)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Transaction broadcasted successfully")
+	w.Balance = balance
 	return nil
 }
 

@@ -144,6 +144,7 @@ func (m *MempoolApi) GetRecommendedFees() (*types.Fees, error) {
 type TxInBuild struct {
 	TxIn         transactions.TxIn
 	PubKeyScript types.PubKeyScript
+	PrivateKey   []byte
 }
 
 func ExtractTxIns(builds []TxInBuild) []transactions.TxIn {
@@ -157,66 +158,83 @@ func ExtractTxIns(builds []TxInBuild) []transactions.TxIn {
 	return txIns
 }
 
-func (m *MempoolApi) GetInputs(amount int, address keymanager.Address) ([]TxInBuild, int, int, error) {
-	/*
-		1. Per prima cosa recupero lo UTXO set per un dato indirizzo
-		2. Recupero la fee (sat/vB) (interrogando Mempool o il Bitcoin Core)
-		3. Stima della dimensione delle TX
-		4. Per ogni UTXO, creo il relativo input e ne calcolo la dimensione.
-		5. Si continua cosi finchè i fondi accumulati dalle UTXO non coprono l'intero importo.
-		6. Se lo coprono, si controlla se c'e del resto, se il resto è troppo poco per permettere la creazione di un ulteriore output, allora lo si lascia come mancia per i miner, altrimenti si crea un secondo output e si ricalcolano le fee.
-	*/
-	utxos, err := m.GetUTXOSetForAddress(address)
-	if err != nil {
-		return nil, 0, 0, fmt.Errorf("could not fetch UTXO set for %s: %v", address.Address, err)
+// collectUTXOs raccoglie gli UTXO da tutti gli indirizzi forniti in un unico pool.
+func (m *MempoolApi) collectUTXOs(addresses map[string]keymanager.Address) ([]types.Utxo, error) {
+	var pool []types.Utxo
+	for _, address := range addresses {
+		utxos, err := m.GetUTXOSetForAddress(address)
+		fmt.Printf("collectUTXOs: utxos=%v\n", utxos)
+		if err != nil {
+			return nil, fmt.Errorf("could not fetch UTXO set for %s: %v", address.Address, err)
+		}
+		for _, u := range utxos {
+			pool = append(pool, types.Utxo{
+				TxId:         u.TxId,
+				Vout:         u.Vout,
+				Value:        u.Value,
+				PubKeyScript: u.PubKeyScript,
+				PrivateKey:   address.SigningKey,
+			})
+		}
 	}
+	return pool, nil
+}
 
-	mempoolFees, err := m.GetRecommendedFees()
-	if err != nil {
-		return nil, 0, 0, fmt.Errorf("error fetching fees: %v", err)
+type Balance struct {
+	Address string
+	Balance int64
+}
+
+// collectUTXOs raccoglie gli UTXO da tutti gli indirizzi forniti in un unico pool.
+func (m *MempoolApi) ComputeBalanceForAddresses(addresses map[string]keymanager.Address) ([]Balance, error) {
+	var balances []Balance
+	for _, address := range addresses {
+		utxos, err := m.GetUTXOSetForAddress(address)
+		if err != nil {
+			return nil, fmt.Errorf("could not fetch UTXO set for %s: %v", address.Address, err)
+		}
+		var balance int64
+		for _, u := range utxos {
+			balance += int64(u.Value)
+		}
+		balances = append(balances, Balance{
+			Address: address.Address,
+			Balance: balance,
+		})
 	}
-	feeRate := mempoolFees.FastestFee // sat/vB
+	return balances, nil
+}
 
+// selectInputs esegue la coin selection su un pool di UTXO già aggregato,
+// indipendentemente da quale indirizzo li abbia originati.
+func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int, int, error) {
 	var selectedInputs []TxInBuild
 	accumulated := 0
 	fee := 0
 	change := 0
-
-	// Dimensione base della transazione: 10 byte (Header) + 34 byte (1 Output di destinazione) = 44 vBytes
-	baseSize := 44
-
-	for _, utxo := range utxos {
+	baseSize := 44 // header (10) + 1 output di destinazione (34)
+	fmt.Printf("getInputs: pool=%v\n", pool)
+	for _, utxo := range pool {
 		accumulated += utxo.Value
-
-		// Creiamo l'input grezzo per questa UTXO.
-		// Sequence standard per transazioni finali: 0xffffffff
 		txIn, err := transactions.NewTxIn(utxo.TxId, uint32(utxo.Vout), 0xffffffff)
 		if err != nil {
 			return nil, 0, 0, fmt.Errorf("errore creazione TxIn: %v", err)
 		}
-		selectedInputs = append(selectedInputs, TxInBuild{TxIn: txIn, PubKeyScript: utxo.PubKeyScript})
 
-		// Calcolo dinamico: ogni input aggiunto pesa circa 148 vBytes
+		selectedInputs = append(selectedInputs, TxInBuild{TxIn: txIn, PubKeyScript: utxo.PubKeyScript, PrivateKey: utxo.PrivateKey})
+
 		currentSize := baseSize + (len(selectedInputs) * 148)
 		fee = currentSize * feeRate
 
-		// Controllo se i fondi accumulati coprono l'importo + la fee calcolata finora
 		if accumulated >= amount+fee {
 			change = accumulated - amount - fee
-
-			// Se c'è un resto, dovremmo creare un Output di resto (altri 34 byte).
-			// Ricalcoliamo la fee per vedere se possiamo permettercelo.
 			if change > 0 {
 				sizeWithChange := currentSize + 34
 				feeWithChange := sizeWithChange * feeRate
 				newChange := accumulated - amount - feeWithChange
-
 				if newChange < 0 {
-					// Aggiungere l'output di resto renderebbe i fondi insufficienti.
-					// Rinunciamo al resto e lo lasciamo come mancia al miner.
 					change = 0
 				} else {
-					// C'è abbastanza resto da poter creare un output di resto
 					fee = feeWithChange
 					change = newChange
 				}
@@ -226,17 +244,34 @@ func (m *MempoolApi) GetInputs(amount int, address keymanager.Address) ([]TxInBu
 	}
 
 	if accumulated < amount+fee {
-		return nil, 0, 0, fmt.Errorf("insufficient funds: the balance is %d satoshi, but %d are needed (included fee of %d)", accumulated, amount+fee, fee)
+		return nil, 0, 0, fmt.Errorf(
+			"insufficient funds: the balance is %d satoshi, but %d are needed (included fee of %d)",
+			accumulated, amount+fee, fee,
+		)
 	}
-
 	return selectedInputs, fee, change, nil
 }
 
-func (m *MempoolApi) BroadcastTransaction(tx *transactions.Tx) error {
+func (m *MempoolApi) GetInputs(amount int, addresses map[string]keymanager.Address) ([]TxInBuild, int, int, error) {
+	pool, err := m.collectUTXOs(addresses)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	fmt.Printf("GetInputs: pool=%v\n", pool)
+
+	mempoolFees, err := m.GetRecommendedFees()
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("error fetching fees: %v", err)
+	}
+	return selectInputs(pool, amount, mempoolFees.FastestFee)
+}
+
+func (m *MempoolApi) BroadcastTransaction(tx *transactions.Tx) (string, error) {
 	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
 	_, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(tx.SerializeHex()))
 	if err != nil {
-		return fmt.Errorf("failed to broadcast transaction: %v", err)
+		return "", fmt.Errorf("failed to broadcast transaction: %v", err)
 	}
-	return nil
+	return tx.ComputeTxID(), nil
 }

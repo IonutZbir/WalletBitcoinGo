@@ -95,6 +95,15 @@ func GenerateSeedEnt128() ([12]string, [64]byte, error) {
 		return [12]string{}, [64]byte{}, err
 	}
 
+	seed, err := GenerateSeedFromMnemonic(mnemonic)
+	if err != nil {
+		return [12]string{}, [64]byte{}, err
+	}
+
+	return [12]string(mnemonic), [64]byte(seed), nil
+}
+
+func GenerateSeedFromMnemonic(mnemonic []string) ([64]byte, error) {
 	passphrase := ""
 	normMnemonic := norm.NFKD.String(strings.Join(mnemonic, " "))
 	normPassphrase := norm.NFKD.String(passphrase)
@@ -102,8 +111,8 @@ func GenerateSeedEnt128() ([12]string, [64]byte, error) {
 
 	seed, err := pbkdf2.Key(sha512.New, normMnemonic, []byte(salt), 2048, 64)
 	if err != nil {
-		return [12]string{}, [64]byte{}, err
+		return [64]byte{}, err
 	}
 
-	return [12]string(mnemonic), [64]byte(seed), nil
+	return [64]byte(seed), nil
 }

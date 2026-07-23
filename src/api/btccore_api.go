@@ -33,10 +33,14 @@ func (b *BtcCoreApi) GetTxVout(txId string) ([]interface{}, error) {
 func (b *BtcCoreApi) GetRecommendedFees() (types.Fees, error) {
 	return types.Fees{}, nil
 }
-func (b *BtcCoreApi) GetInputs(amount int, address keymanager.Address) ([]TxInBuild, int, int, error) {
+func (b *BtcCoreApi) GetInputs(amount int, addresses map[string]keymanager.Address) ([]TxInBuild, int, int, error) {
 	return nil, 0, 0, nil
 }
 
 func (b *BtcCoreApi) BroadcastTransaction(tx *transactions.Tx) error {
 	return nil
+}
+
+func (b *BtcCoreApi) ComputeBalanceForAddresses(addresses map[string]keymanager.Address) ([]Balance, error) {
+	return nil, nil
 }
