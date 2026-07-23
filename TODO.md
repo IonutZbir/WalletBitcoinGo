@@ -1,5 +1,11 @@
-# 20/07/2026
+# 23/07/2026
 
+- [x] Create the main. 
+- [x] Create legacy transactions.
 - [ ] Create SegWit transactions.
-- [ ] Generate the wallet (choose how many addresses to generate) and save it to disk in standard format.
-- [ ] Load the wallet from disk and show the addresses.
+- [x] Generate the wallet (choose how many addresses to generate) and save it to disk in standard format.
+- [x] Load the wallet from disk and show the addresses.
+
+- [ ] Create the BtcCore apis
+- [ ] Refactor
+- [] Export keys: like electrum (pk, type:address)
