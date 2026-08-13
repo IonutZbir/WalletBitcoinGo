@@ -3,6 +3,7 @@ package wallet
 import (
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"wallet-bitcoin/src/api"
 	keymanager "wallet-bitcoin/src/key_manager"
 	"wallet-bitcoin/src/transactions"
@@ -41,9 +42,6 @@ func (w *Wallet) buildOutputsLegacy(amount int, change int, destAddr string, cha
 
 	myOutput := transactions.NewTxOut(int64(amount), pkScript)
 
-	if err != nil {
-		return nil, fmt.Errorf("could not decode the destination address: %v", err)
-	}
 	pkScriptChange := transactions.P2PKHScript(changeAddr.PubKeyHash)
 
 	myOutputChange := transactions.NewTxOut(int64(change), pkScriptChange)
@@ -81,7 +79,7 @@ func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, e
 	}
 
 	// chose random change address
-	changeAddr, err := w.randomChangeAddress()
+	changeAddr, err := w.randomChangeAddress(false)
 	if err != nil {
 		return "", fmt.Errorf("could not get change address: %v", err)
 	}
@@ -106,15 +104,27 @@ func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, e
 	return txId, nil
 }
 
-func (w *Wallet) randomChangeAddress() (keymanager.Address, error) {
-	if len(w.ChangeLegacyAddresses) == 0 {
+// randomChangeAddress returns a random change address from the wallet's change
+// addresses of the given kind (legacy or segwit).
+func (w *Wallet) randomChangeAddress(segwit bool) (keymanager.Address, error) {
+	addrMap := w.ChangeLegacyAddresses
+	if segwit {
+		addrMap = w.ChangeSegwitAddresses
+	}
+
+	if len(addrMap) == 0 {
 		return keymanager.Address{}, fmt.Errorf("no change addresses available")
 	}
 
-	// Ranging over a Go map starts at a random bucket every time
-	for _, addr := range w.ChangeLegacyAddresses {
-		return addr, nil // Returns the very first item hit in the randomized loop
+	target := rand.Intn(len(addrMap))
+	i := 0
+	for _, addr := range addrMap {
+		if i == target {
+			return addr, nil
+		}
+		i++
 	}
 
+	// Irraggiungibile se addrMap non è vuota, ma richiesto per compilare.
 	return keymanager.Address{}, fmt.Errorf("no change addresses available")
 }

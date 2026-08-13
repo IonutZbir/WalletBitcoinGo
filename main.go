@@ -40,7 +40,7 @@ func main() {
 	help := flag.Bool("help", false, "Show help")
 	password := flag.String("password", "", "Password for the wallet")
 	walletName := flag.String("wallet", "", "Name of the wallet")
-	action := flag.String("action", "", "Action to perform: new, load, send-legacy")
+	action := flag.String("action", "", "Action to perform: new, load, send-legacy, send-segwit")
 	testnet := flag.Bool("testnet", false, "Use testnet")
 	amount := flag.Int("amount", 0, "Amount to send (satoshi)")
 	dest := flag.String("dest", "", "Destination address")
@@ -67,6 +67,10 @@ func main() {
 		}
 	case "send-legacy":
 		if err := sendLegacyTx(*walletName, *password, *testnet, *amount, *dest); err != nil {
+			log.Fatal(err)
+		}
+	case "send-segwit":
+		if err := sendSegwitTx(*walletName, *password, *testnet, *amount, *dest); err != nil {
 			log.Fatal(err)
 		}
 	default:
@@ -111,6 +115,30 @@ func sendLegacyTx(name, password string, testnet bool, amount int, dest string) 
 	// core = false per ora: l'idea è usare sempre btcCore e ricadere su mempool in caso di problemi.
 	// Non specifico sourceAddr: il wallet usa tutti gli address disponibili.
 	tx, err := w.SendLegacyTx(amount, false, dest)
+	if err != nil {
+		return fmt.Errorf("sending transaction: %w", err)
+	}
+
+	log.Println("Transaction sent successfully")
+	fmt.Println(tx)
+	return nil
+}
+
+func sendSegwitTx(name, password string, testnet bool, amount int, dest string) error {
+	if amount <= 0 {
+		return fmt.Errorf("amount must be > 0")
+	}
+	if dest == "" {
+		return fmt.Errorf("destination address is required")
+	}
+
+	w, err := wallet.LoadWallet(name, password, testnet)
+	if err != nil {
+		return fmt.Errorf("loading wallet: %w", err)
+	}
+
+	log.Println("Sending segwit transaction")
+	tx, err := w.SendSegwit(amount, dest, false)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
 	}

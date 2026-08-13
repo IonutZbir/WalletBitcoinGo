@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	keymanager "wallet-bitcoin/src/key_manager"
 	"wallet-bitcoin/src/transactions"
 	"wallet-bitcoin/src/types"
+
+	"github.com/btcsuite/btcd/wire"
 )
 
 const MEMPOOLTESTURL = "https://mempool.space/testnet/api/"
@@ -120,7 +123,6 @@ func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.U
 func (m *MempoolApi) GetRecommendedFees() (*types.Fees, error) {
 	reqUrl := fmt.Sprintf("%sv1/fees/recommended", MEMPOOLTEST4URL)
 
-	fmt.Println(reqUrl)
 	resp, err := http.Get(reqUrl)
 	if err != nil {
 		return nil, err
@@ -145,6 +147,7 @@ type TxInBuild struct {
 	TxIn         transactions.TxIn
 	PubKeyScript types.PubKeyScript
 	PrivateKey   []byte
+	Amount       int64
 }
 
 func ExtractTxIns(builds []TxInBuild) []transactions.TxIn {
@@ -163,7 +166,6 @@ func (m *MempoolApi) collectUTXOs(addresses map[string]keymanager.Address) ([]ty
 	var pool []types.Utxo
 	for _, address := range addresses {
 		utxos, err := m.GetUTXOSetForAddress(address)
-		fmt.Printf("collectUTXOs: utxos=%v\n", utxos)
 		if err != nil {
 			return nil, fmt.Errorf("could not fetch UTXO set for %s: %v", address.Address, err)
 		}
@@ -213,7 +215,6 @@ func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int,
 	fee := 0
 	change := 0
 	baseSize := 44 // header (10) + 1 output di destinazione (34)
-	fmt.Printf("getInputs: pool=%v\n", pool)
 	for _, utxo := range pool {
 		accumulated += utxo.Value
 		txIn, err := transactions.NewTxIn(utxo.TxId, uint32(utxo.Vout), 0xffffffff)
@@ -221,7 +222,7 @@ func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int,
 			return nil, 0, 0, fmt.Errorf("errore creazione TxIn: %v", err)
 		}
 
-		selectedInputs = append(selectedInputs, TxInBuild{TxIn: txIn, PubKeyScript: utxo.PubKeyScript, PrivateKey: utxo.PrivateKey})
+		selectedInputs = append(selectedInputs, TxInBuild{TxIn: txIn, PubKeyScript: utxo.PubKeyScript, PrivateKey: utxo.PrivateKey, Amount: int64(utxo.Value)})
 
 		currentSize := baseSize + (len(selectedInputs) * 148)
 		fee = currentSize * feeRate
@@ -258,8 +259,6 @@ func (m *MempoolApi) GetInputs(amount int, addresses map[string]keymanager.Addre
 		return nil, 0, 0, err
 	}
 
-	fmt.Printf("GetInputs: pool=%v\n", pool)
-
 	mempoolFees, err := m.GetRecommendedFees()
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("error fetching fees: %v", err)
@@ -274,4 +273,21 @@ func (m *MempoolApi) BroadcastTransaction(tx *transactions.Tx) (string, error) {
 		return "", fmt.Errorf("failed to broadcast transaction: %v", err)
 	}
 	return tx.ComputeTxID(), nil
+}
+
+func (m *MempoolApi) BroadcastTransactionSegwit(tx *wire.MsgTx) (string, error) {
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return "", fmt.Errorf("failed to serialize transaction: %v", err)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
+	_, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(txHex))
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast transaction: %v", err)
+	}
+
+	// mempool.space risponde con il txid in testo semplice se la broadcast va a buon 	fine.
+	return tx.TxID(), nil
 }
