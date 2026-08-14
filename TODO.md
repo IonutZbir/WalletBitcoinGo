@@ -10,5 +10,7 @@
 - [ ] Refactor
 - [ ] Export keys: like electrum (pk, type:address)
 - [ ] Testnet and Mainnet options
+- [ ] FallBack on Mempool API if BtcCore API is not available
 - [ ] System log
-- [ ] Get broadcast response message
+- [x] Get broadcast response message
+- [x] Check if already exsits wallet with the same name. Do not overwrite.

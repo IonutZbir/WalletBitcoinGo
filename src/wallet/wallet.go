@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,8 +27,8 @@ type Wallet struct {
 	ChangeSegwitAddresses    map[string]keymanager.Address
 	Balance                  []api.Balance
 	Testnet                  bool
-	Mempool                  api.MempoolApi
-	BtcCore                  api.BtcCoreApi
+	Mempool                  *api.MempoolApi
+	BtcCore                  *api.BtcCoreApi
 	Seed                     [64]byte
 	Mnemonic                 [12]string
 	Password                 string
@@ -95,7 +96,7 @@ func NewWalletFromScratch(name string, password string, testnet bool) (*Wallet, 
 }
 
 func NewWalletFromMnemonic(name string, password string, testnet bool, mnemonic [12]string) (*Wallet, error) {
-	walletFilePath, err := getWalletPath(name)
+	walletFilePath, err := getWalletPath(name, testnet)
 	if err != nil {
 		return nil, fmt.Errorf("error getting wallet path: %w", err)
 	}
@@ -126,8 +127,8 @@ func NewWalletFromMnemonic(name string, password string, testnet bool, mnemonic 
 		ChangeSegwitAddresses:    make(map[string]keymanager.Address, NumChangeSegwitAddresses),
 		Balance:                  make([]api.Balance, 0),
 		Testnet:                  testnet,
-		Mempool:                  api.MempoolApi{},
-		BtcCore:                  api.BtcCoreApi{},
+		Mempool:                  api.NewMempoolApi(testnet),
+		BtcCore:                  api.NewBtcCoreApi(testnet),
 		Seed:                     seed,
 		Mnemonic:                 mnemonic,
 		Password:                 password,
@@ -187,18 +188,34 @@ func NewWalletFromMnemonic(name string, password string, testnet bool, mnemonic 
 // func NewWalletFromPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
 // func (w *Wallet) ImportPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
 
-func getWalletPath(name string) (string, error) {
+func getWalletPath(name string, testnet bool) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("error finding home directory: %w", err)
 	}
 
-	walletDir := filepath.Join(homeDir, baseDirName, name)
+	walletDir := filepath.Join(homeDir, baseDirName)
+	if testnet {
+		walletDir = filepath.Join(walletDir, "testnet")
+	}
+	walletDir = filepath.Join(walletDir, name)
+
+	walletFilePath := filepath.Join(walletDir, name+".json")
+
+	// 1. Controlla se il file esiste già
+	if _, err := os.Stat(walletFilePath); err == nil {
+		// Il file esiste già
+		return "", fmt.Errorf("wallet '%s' already exists at path: %s", name, walletFilePath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		// C'è stato un errore diverso (es. problemi di permessi)
+		return "", fmt.Errorf("error checking if wallet exists: %w", err)
+	}
+
+	// 2. Crea la directory solo se il file non esiste
 	if err := os.MkdirAll(walletDir, 0700); err != nil {
 		return "", fmt.Errorf("error creating wallet directory: %w", err)
 	}
 
-	walletFilePath := filepath.Join(walletDir, name+".json")
 	return walletFilePath, nil
 }
 

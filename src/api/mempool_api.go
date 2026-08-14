@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	keymanager "wallet-bitcoin/src/key_manager"
 	"wallet-bitcoin/src/transactions"
 	"wallet-bitcoin/src/types"
@@ -15,16 +16,26 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+const MEMPOOLMAINURL = "https://mempool.space/api/"
 const MEMPOOLTESTURL = "https://mempool.space/testnet/api/"
 const MEMPOOLTEST4URL = "https://mempool.space/testnet4/api/"
 
-type MempoolApi struct{}
+type MempoolApi struct {
+	testnet bool
+}
+
+func NewMempoolApi(testnet bool) *MempoolApi {
+	return &MempoolApi{testnet: testnet}
+}
 
 func (m *MempoolApi) GetTx(txId string) (map[string]interface{}, error) {
 	// GET testnet/api/tx/:txid
 	// TODO: refactor so this function returns a Tx data type instead of a map
 
-	reqUrl := fmt.Sprintf("%stx/%s", MEMPOOLTESTURL, txId)
+	reqUrl := fmt.Sprintf("%stx/%s", MEMPOOLMAINURL, txId)
+	if m.testnet {
+		reqUrl = fmt.Sprintf("%stx/%s", MEMPOOLTESTURL, txId)
+	}
 
 	res, err := http.Get(reqUrl)
 	if err != nil {
@@ -53,7 +64,10 @@ func (m *MempoolApi) GetTxVout(txId string) ([]interface{}, error) {
 }
 
 func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.Utxo, error) {
-	reqUrl := fmt.Sprintf("%saddress/%s/utxo", MEMPOOLTESTURL, address.Address)
+	reqUrl := fmt.Sprintf("%saddress/%s/utxo", MEMPOOLMAINURL, address.Address)
+	if m.testnet {
+		reqUrl = fmt.Sprintf("%saddress/%s/utxo", MEMPOOLTESTURL, address.Address)
+	}
 
 	res, err := http.Get(reqUrl)
 	if err != nil {
@@ -121,7 +135,10 @@ func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.U
 }
 
 func (m *MempoolApi) GetRecommendedFees() (*types.Fees, error) {
-	reqUrl := fmt.Sprintf("%sv1/fees/recommended", MEMPOOLTEST4URL)
+	reqUrl := fmt.Sprintf("%sv1/fees/recommended", MEMPOOLMAINURL)
+	if m.testnet {
+		reqUrl = fmt.Sprintf("%sv1/fees/recommended", MEMPOOLTEST4URL)
+	}
 
 	resp, err := http.Get(reqUrl)
 	if err != nil {
@@ -267,10 +284,10 @@ func (m *MempoolApi) GetInputs(amount int, addresses map[string]keymanager.Addre
 }
 
 func (m *MempoolApi) BroadcastTransaction(tx *transactions.Tx) (string, error) {
-	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
-	_, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(tx.SerializeHex()))
+	txHex := tx.SerializeHex()
+	_, err := m.broadcastTransaction(txHex)
 	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %v", err)
+		return "", err
 	}
 	return tx.ComputeTxID(), nil
 }
@@ -282,12 +299,40 @@ func (m *MempoolApi) BroadcastTransactionSegwit(tx *wire.MsgTx) (string, error) 
 	}
 	txHex := hex.EncodeToString(buf.Bytes())
 
-	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
-	_, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(txHex))
+	_, err := m.broadcastTransaction(txHex)
 	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %v", err)
+		return "", err
 	}
 
-	// mempool.space risponde con il txid in testo semplice se la broadcast va a buon 	fine.
 	return tx.TxID(), nil
+}
+
+func (m *MempoolApi) broadcastTransaction(txHex string) (string, error) {
+	reqUrl := fmt.Sprintf("%s/tx", MEMPOOLMAINURL)
+	if m.testnet {
+		reqUrl = fmt.Sprintf("%s/tx", MEMPOOLTESTURL)
+	}
+
+	resp, err := http.Post(reqUrl, "application/x-www-form-urlencoded", bytes.NewBufferString(txHex))
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	bodyStr := strings.TrimSpace(string(bodyBytes))
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("broadcast failed (status %d): %s", resp.StatusCode, bodyStr)
+	}
+
+	if bodyStr != "" {
+		return bodyStr, nil
+	}
+
+	return txHex, nil
 }

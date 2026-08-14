@@ -12,12 +12,13 @@ const (
 )
 
 type BtcCoreApi struct {
-	client *http.Client
+	client  *http.Client
+	testnet bool
 }
 
-func NewBtcCoreApi() *BtcCoreApi {
+func NewBtcCoreApi(testnet bool) *BtcCoreApi {
 	client := &http.Client{}
-	return &BtcCoreApi{client: client}
+	return &BtcCoreApi{client: client, testnet: testnet}
 }
 
 func (b *BtcCoreApi) GetTx(txId string) (map[string]interface{}, error) {

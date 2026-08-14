@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"wallet-bitcoin/src/api"
 	keymanager "wallet-bitcoin/src/key_manager"
 
 	"golang.org/x/crypto/scrypt"
@@ -174,7 +175,12 @@ func LoadWallet(name string, password string, testnet bool) (*Wallet, error) {
 		return nil, fmt.Errorf("error finding home directory: %w", err)
 	}
 
-	walletDir := filepath.Join(homeDir, baseDirName, name)
+	walletDir := filepath.Join(homeDir, baseDirName)
+	if testnet {
+		walletDir = filepath.Join(walletDir, "testnet")
+	}
+	walletDir = filepath.Join(walletDir, name)
+
 	if _, err := os.Stat(walletDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("wallet directory does not exist")
 	}
@@ -216,6 +222,8 @@ func LoadWallet(name string, password string, testnet bool) (*Wallet, error) {
 		Name:     name,
 		Password: password,
 		Testnet:  testnet,
+		Mempool:  api.NewMempoolApi(testnet),
+		BtcCore:  api.NewBtcCoreApi(testnet),
 	}
 	payload.applyTo(wallet)
 	core := false
