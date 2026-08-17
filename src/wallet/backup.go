@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"wallet-bitcoin/src/api"
 	keymanager "wallet-bitcoin/src/key_manager"
+	"wallet-bitcoin/src/utils"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -137,4 +139,118 @@ func (w *Wallet) ExportKeys(exportType string) (string, error) {
 
 	absPath, _ := filepath.Abs(filePath)
 	return absPath, nil
+}
+
+func ImportWalletFromFile(name string, password string, testnet bool, filePath string) (*Wallet, error) {
+	extension := filepath.Ext(filePath)
+	var addresses []map[string]string
+
+	switch extension {
+	case ".json":
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading file: %w", err)
+		}
+		if err := json.Unmarshal(data, &addresses); err != nil {
+			return nil, fmt.Errorf("unmarshalling json: %w", err)
+		}
+	case ".csv":
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("opening csv: %w", err)
+		}
+		defer f.Close()
+
+		r := csv.NewReader(f)
+		records, err := r.ReadAll()
+		if err != nil {
+			return nil, fmt.Errorf("reading csv: %w", err)
+		}
+
+		if len(records) < 1 {
+			return nil, fmt.Errorf("empty csv")
+		}
+
+		// salta l'header
+		for i, row := range records[1:] {
+			if len(row) != 2 {
+				return nil, fmt.Errorf("row %d: expected 2 columns, got %d", i+2, len(row))
+			}
+			address := strings.TrimSpace(row[0])
+			signingKey := strings.TrimSpace(row[1])
+			addresses = append(addresses, map[string]string{
+				"address":    address,
+				"signingKey": signingKey,
+			})
+		}
+	default:
+		return nil, fmt.Errorf("unsupported file type: %s", extension)
+	}
+
+	legacyAddresses := make(map[string]keymanager.Address)
+	segwitAddresses := make(map[string]keymanager.Address)
+	var w Wallet
+	w.Testnet = testnet
+	for _, entry := range addresses {
+		signingKey, err := w.WifToSk(entry["signingKey"])
+		if err != nil {
+			return nil, fmt.Errorf("wif to sk: %w", err)
+		}
+		prefix := strings.Split(entry["signingKey"], ":")[0]
+		pubKeyCompressed, err := utils.PrivToCompressedPub(signingKey)
+		if err != nil {
+			return nil, err
+		}
+		pubKeyHash := utils.Hash160(pubKeyCompressed)
+		switch prefix {
+		case "p2pkh":
+			legacyAddresses[entry["address"]] = keymanager.Address{
+				SigningKey: signingKey,
+				PubKeyHash: pubKeyHash[:],
+				Address:    entry["address"],
+				Legacy:     true,
+				Path:       nil,
+				Balance:    0,
+			}
+		case "p2wpkh":
+			segwitAddresses[entry["address"]] = keymanager.Address{
+				SigningKey: signingKey,
+				PubKeyHash: pubKeyHash[:],
+				Address:    entry["address"],
+				Legacy:     false,
+				Path:       nil,
+				Balance:    0,
+			}
+		}
+	}
+
+	walletFilePath, err := getWalletPath(name, testnet)
+	if err != nil {
+		return nil, fmt.Errorf("error getting wallet path: %w", err)
+	}
+
+	w.ReceiversLegacyAddresses = legacyAddresses
+	w.ReceiversSegwitAddresses = segwitAddresses
+	w.Balance = nil
+	w.Mempool = api.NewMempoolApi(testnet)
+	w.BtcCore = api.NewBtcCoreApi(testnet)
+	w.Seed = [64]byte{}
+	w.Mnemonic = [12]string{}
+	w.Password = password
+	w.Name = name
+	w.Xpub = nil
+	w.Xprv = nil
+	w.ChangeLegacyAddresses = nil
+	w.ChangeSegwitAddresses = nil
+	w.Path = walletFilePath
+
+	if err := w.EncryptAndSaveWallet(password, walletFilePath); err != nil {
+		return nil, fmt.Errorf("error encrypting and saving wallet: %w", err)
+	}
+
+	core := false // TODO: fallback to mempool
+	w.getBalance(core)
+
+	return &w, nil
+
 }

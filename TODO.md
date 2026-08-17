@@ -8,9 +8,9 @@
 
 - [ ] Create the BtcCore apis
 - [ ] Refactor
-- [ ] Export keys: like electrum (pk, type:address)
-- [ ] Import keys: like electrum (pk, type:address)
-- [ ] Testnet and Mainnet options
+- [x] Export keys: like electrum (pk, type:address)
+- [x] Import keys: like electrum (pk, type:address)
+- [x] Testnet and Mainnet options
 - [ ] FallBack on Mempool API if BtcCore API is not available
 - [ ] System log
 - [x] Get broadcast response message

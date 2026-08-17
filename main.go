@@ -26,7 +26,7 @@ Actions:
 	import         Import a wallet
 
 Options:
-	-name 		<name>      Wallet name
+	-wallet 	<name>      Wallet name
 	-password 	<pass>      Wallet password
 	-testnet 				Use testnet (default: false)
 	-amount 	<amt>     	Amount to send
@@ -35,11 +35,11 @@ Options:
 	-file 		<path>      Path to the WIF/CSV/JSON file (required for import)
 
 Examples:
-	%s -action new -name mywallet -password secret -testnet
-	%s -action load -name mywallet -password secret -testnet
-	%s -action send-segwit -name mywallet -password secret -amount 0.05 -dest tb1q...
-	%s -action export -name mywallet -password secret -type json
-	%s -action import -name mywallet -password secret -type csv -file <path_to_wif_file>
+	%s -action new 		   -wallet mywallet -password secret -testnet
+	%s -action load 	   -wallet mywallet -password secret -testnet
+	%s -action send-segwit -wallet mywallet -password secret -amount 0.05 -dest tb1q...
+	%s -action export 	   -wallet mywallet -password secret -type json
+	%s -action import 	   -wallet mywallet -password secret -file <path_to_file>
 `
 
 func main() {
@@ -54,12 +54,12 @@ func main() {
 	help := flag.Bool("help", false, "Show help")
 	password := flag.String("password", "", "Password for the wallet")
 	walletName := flag.String("wallet", "", "Name of the wallet")
-	action := flag.String("action", "", "Action to perform: new, load, send-legacy, send-segwit")
+	action := flag.String("action", "", "Action to perform: new, load, send-legacy, send-segwit, export, import")
 	testnet := flag.Bool("testnet", false, "Use testnet")
 	amount := flag.Int("amount", 0, "Amount to send (satoshi)")
 	dest := flag.String("dest", "", "Destination address")
 	exportType := flag.String("type", "json", "Export/import format (default: json; accepted: json, csv)")
-	// file := flag.String("file", "", "Path to the WIF/CSV/JSON file (required for import)")
+	file := flag.String("file", "", "Path to the WIF/CSV/JSON file (required for import)")
 
 	flag.Parse()
 
@@ -82,21 +82,39 @@ func main() {
 			log.Fatal(err)
 		}
 	case "send-legacy":
+		if *amount == 0 {
+			log.Fatal("missing required flag: -amount")
+		}
+		if *dest == "" {
+			log.Fatal("missing required flag: -dest")
+		}
 		if err := sendLegacyTx(*walletName, *password, *testnet, *amount, *dest); err != nil {
 			log.Fatal(err)
 		}
 	case "send-segwit":
+		if *amount == 0 {
+			log.Fatal("missing required flag: -amount")
+		}
+		if *dest == "" {
+			log.Fatal("missing required flag: -dest")
+		}
 		if err := sendSegwitTx(*walletName, *password, *testnet, *amount, *dest); err != nil {
 			log.Fatal(err)
 		}
 	case "export":
+		if *exportType == "" {
+			log.Fatal("missing required flag: -type")
+		}
 		if err := exportWallet(*walletName, *password, *testnet, *exportType); err != nil {
 			log.Fatal(err)
 		}
-	// case "import":
-	// 	if err := importWallet(*walletName, *password, *testnet, *importType); err != nil {
-	// 		log.Fatal(err)
-	// 	}
+	case "import":
+		if *file == "" {
+			log.Fatal("missing required flag: -file")
+		}
+		if err := importWallet(*walletName, *password, *testnet, *file); err != nil {
+			log.Fatal(err)
+		}
 	default:
 		log.Fatalf("unknown action %q (expected: new, load, send-legacy, send-segwit, export, import)", *action)
 	}
@@ -118,6 +136,38 @@ func loadAndDescribeWallet(name, password string, testnet bool) error {
 		return fmt.Errorf("loading wallet: %w", err)
 	}
 	log.Println("Wallet loaded successfully")
+	fmt.Println(w)
+	return nil
+}
+
+func exportWallet(name, password string, testnet bool, exportType string) error {
+	expectedTypes := map[string]string{"json": "json", "csv": "csv"}
+	if _, ok := expectedTypes[exportType]; !ok {
+		return fmt.Errorf("invalid export type %q (accepted: json, csv)", exportType)
+	}
+
+	w, err := wallet.LoadWallet(name, password, testnet)
+	if err != nil {
+		return fmt.Errorf("loading wallet: %w", err)
+	}
+
+	absPath, err := w.ExportKeys(exportType)
+	if err != nil {
+		return fmt.Errorf("exporting keys: %w", err)
+	}
+
+	numKeys := len(w.ReceiversLegacyAddresses) + len(w.ChangeLegacyAddresses) + len(w.ReceiversSegwitAddresses) + len(w.ChangeSegwitAddresses)
+	log.Printf("Wallet exported successfully to %s (%d keys)", absPath, numKeys)
+	return nil
+}
+
+func importWallet(name, password string, testnet bool, path string) error {
+	w, err := wallet.ImportWalletFromFile(name, password, testnet, path)
+	if err != nil {
+		return fmt.Errorf("importing wallet: %w", err)
+	}
+
+	log.Printf("Wallet imported successfully from %s", path)
 	fmt.Println(w)
 	return nil
 }
@@ -145,27 +195,6 @@ func sendLegacyTx(name, password string, testnet bool, amount int, dest string) 
 
 	log.Println("Transaction sent successfully")
 	fmt.Println(tx)
-	return nil
-}
-
-func exportWallet(name, password string, testnet bool, exportType string) error {
-	expectedTypes := map[string]string{"json": "json", "csv": "csv"}
-	if _, ok := expectedTypes[exportType]; !ok {
-		return fmt.Errorf("invalid export type %q (accepted: json, csv)", exportType)
-	}
-
-	w, err := wallet.LoadWallet(name, password, testnet)
-	if err != nil {
-		return fmt.Errorf("loading wallet: %w", err)
-	}
-
-	absPath, err := w.ExportKeys(exportType)
-	if err != nil {
-		return fmt.Errorf("exporting keys: %w", err)
-	}
-
-	numKeys := len(w.ReceiversLegacyAddresses) + len(w.ChangeLegacyAddresses) + len(w.ReceiversSegwitAddresses) + len(w.ChangeSegwitAddresses)
-	log.Printf("Wallet exported successfully to %s (%d keys)", absPath, numKeys)
 	return nil
 }
 

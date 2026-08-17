@@ -78,7 +78,6 @@ func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, e
 		return "", fmt.Errorf("could not get inputs: %v", err)
 	}
 
-	// chose random change address
 	changeAddr, err := w.randomChangeAddress(false)
 	if err != nil {
 		return "", fmt.Errorf("could not get change address: %v", err)
@@ -108,8 +107,14 @@ func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, e
 // addresses of the given kind (legacy or segwit).
 func (w *Wallet) randomChangeAddress(segwit bool) (keymanager.Address, error) {
 	addrMap := w.ChangeLegacyAddresses
+	if addrMap == nil {
+		addrMap = w.ReceiversLegacyAddresses
+	}
 	if segwit {
 		addrMap = w.ChangeSegwitAddresses
+		if addrMap == nil {
+			addrMap = w.ReceiversSegwitAddresses
+		}
 	}
 
 	if len(addrMap) == 0 {

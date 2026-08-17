@@ -52,11 +52,15 @@ func (w *Wallet) String() string {
 	fmt.Fprintf(&builder, "Path: %s\nTestnet: %t\nBalance: %d satoshis\n", w.Path, w.Testnet, totalBalance)
 
 	// Format Mnemonic array
-	fmt.Fprintf(&builder, "Mnemonic: %s %s %s %s %s %s %s %s %s %s %s %s\n",
-		w.Mnemonic[0], w.Mnemonic[1], w.Mnemonic[2], w.Mnemonic[3],
-		w.Mnemonic[4], w.Mnemonic[5], w.Mnemonic[6], w.Mnemonic[7],
-		w.Mnemonic[8], w.Mnemonic[9], w.Mnemonic[10], w.Mnemonic[11],
-	)
+	if w.Mnemonic == [12]string{} {
+		fmt.Fprintf(&builder, "Mnemonic: No Mnemonic, wallet created from importing keys.\n")
+	} else {
+		fmt.Fprintf(&builder, "Mnemonic: %s %s %s %s %s %s %s %s %s %s %s %s\n",
+			w.Mnemonic[0], w.Mnemonic[1], w.Mnemonic[2], w.Mnemonic[3],
+			w.Mnemonic[4], w.Mnemonic[5], w.Mnemonic[6], w.Mnemonic[7],
+			w.Mnemonic[8], w.Mnemonic[9], w.Mnemonic[10], w.Mnemonic[11],
+		)
+	}
 
 	// Total count
 	totalAddresses := len(w.ReceiversLegacyAddresses) + len(w.ReceiversSegwitAddresses) +
@@ -184,9 +188,6 @@ func NewWalletFromMnemonic(name string, password string, testnet bool, mnemonic 
 	return w, nil
 
 }
-
-// func NewWalletFromPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
-// func (w *Wallet) ImportPrivateKey(name string, password string, testnet bool, prvKey []byte) (*Wallet, error) {}
 
 func getWalletPath(name string, testnet bool) (string, error) {
 	homeDir, err := os.UserHomeDir()
