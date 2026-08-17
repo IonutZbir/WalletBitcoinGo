@@ -1,42 +1,56 @@
 package main
 
 import (
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	wallet "wallet-bitcoin/src/wallet"
-
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 )
-
-func skToWif() error {
-	skHex := "d124ebf7c4a1d335de47d81530ae81c5949ebf5945e09abce8a1a15d3076df33"
-
-	skBytes, err := hex.DecodeString(skHex)
-	if err != nil {
-		return fmt.Errorf("failed to decode hex: %w", err)
-	}
-
-	privKey, _ := btcec.PrivKeyFromBytes(skBytes)
-
-	wif, err := btcutil.NewWIF(privKey, &chaincfg.TestNet3Params, true)
-	if err != nil {
-		return fmt.Errorf("failed to create WIF: %w", err)
-	}
-
-	fmt.Printf("Your Testnet WIF is: %s\n", wif.String())
-	return nil
-}
 
 /*
  * wallet -testnet -new w1 -password prova
  * wallet -testnet -load w1 -password prova
  */
 
+var usageStr = `Usage:
+%s -action <action> [options]
+
+Actions:
+	new            Create a new wallet
+	load           Load an existing wallet
+	send-legacy    Send a legacy transaction
+	send-segwit    Send a SegWit transaction
+	export         Export the wallet
+	import         Import a wallet
+
+Options:
+	-name 		<name>      Wallet name
+	-password 	<pass>      Wallet password
+	-testnet 				Use testnet (default: false)
+	-amount 	<amt>     	Amount to send
+	-dest 		<addr>      Destination address
+	-type 		<format>    Export/import format (default: json; accepted: json, csv).
+	-file 		<path>      Path to the WIF/CSV/JSON file (required for import)
+
+Examples:
+	%s -action new -name mywallet -password secret -testnet
+	%s -action load -name mywallet -password secret -testnet
+	%s -action send-segwit -name mywallet -password secret -amount 0.05 -dest tb1q...
+	%s -action export -name mywallet -password secret -type json
+	%s -action import -name mywallet -password secret -type csv -file <path_to_wif_file>
+`
+
 func main() {
+
+	flag.Usage = func() {
+		out := flag.CommandLine.Output()
+		bin := filepath.Base(os.Args[0])
+
+		fmt.Fprintf(out, usageStr, bin, bin, bin, bin, bin, bin)
+	}
+
 	help := flag.Bool("help", false, "Show help")
 	password := flag.String("password", "", "Password for the wallet")
 	walletName := flag.String("wallet", "", "Name of the wallet")
@@ -44,6 +58,8 @@ func main() {
 	testnet := flag.Bool("testnet", false, "Use testnet")
 	amount := flag.Int("amount", 0, "Amount to send (satoshi)")
 	dest := flag.String("dest", "", "Destination address")
+	exportType := flag.String("type", "json", "Export/import format (default: json; accepted: json, csv)")
+	// file := flag.String("file", "", "Path to the WIF/CSV/JSON file (required for import)")
 
 	flag.Parse()
 
@@ -73,8 +89,16 @@ func main() {
 		if err := sendSegwitTx(*walletName, *password, *testnet, *amount, *dest); err != nil {
 			log.Fatal(err)
 		}
+	case "export":
+		if err := exportWallet(*walletName, *password, *testnet, *exportType); err != nil {
+			log.Fatal(err)
+		}
+	// case "import":
+	// 	if err := importWallet(*walletName, *password, *testnet, *importType); err != nil {
+	// 		log.Fatal(err)
+	// 	}
 	default:
-		log.Fatalf("unknown action %q (expected: new, load, send-legacy)", *action)
+		log.Fatalf("unknown action %q (expected: new, load, send-legacy, send-segwit, export, import)", *action)
 	}
 }
 
@@ -121,6 +145,27 @@ func sendLegacyTx(name, password string, testnet bool, amount int, dest string) 
 
 	log.Println("Transaction sent successfully")
 	fmt.Println(tx)
+	return nil
+}
+
+func exportWallet(name, password string, testnet bool, exportType string) error {
+	expectedTypes := map[string]string{"json": "json", "csv": "csv"}
+	if _, ok := expectedTypes[exportType]; !ok {
+		return fmt.Errorf("invalid export type %q (accepted: json, csv)", exportType)
+	}
+
+	w, err := wallet.LoadWallet(name, password, testnet)
+	if err != nil {
+		return fmt.Errorf("loading wallet: %w", err)
+	}
+
+	absPath, err := w.ExportKeys(exportType)
+	if err != nil {
+		return fmt.Errorf("exporting keys: %w", err)
+	}
+
+	numKeys := len(w.ReceiversLegacyAddresses) + len(w.ChangeLegacyAddresses) + len(w.ReceiversSegwitAddresses) + len(w.ChangeSegwitAddresses)
+	log.Printf("Wallet exported successfully to %s (%d keys)", absPath, numKeys)
 	return nil
 }
 
