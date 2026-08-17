@@ -9,37 +9,32 @@ import (
 	wallet "wallet-bitcoin/src/wallet"
 )
 
-/*
- * wallet -testnet -new w1 -password prova
- * wallet -testnet -load w1 -password prova
- */
-
-var usageStr = `Usage:
-%s -action <action> [options]
+const usageStr = `Usage:
+  %s -action <action> [options]
 
 Actions:
-	new            Create a new wallet
-	load           Load an existing wallet
-	send-legacy    Send a legacy transaction
-	send-segwit    Send a SegWit transaction
-	export         Export the wallet
-	import         Import a wallet
+  new            Create a new wallet
+  load           Load an existing wallet
+  send-legacy    Send a legacy transaction
+  send-segwit    Send a SegWit transaction
+  export         Export the wallet
+  import         Import a wallet
 
 Options:
-	-wallet 	<name>      Wallet name
-	-password 	<pass>      Wallet password
-	-testnet 				Use testnet (default: false)
-	-amount 	<amt>     	Amount to send
-	-dest 		<addr>      Destination address
-	-type 		<format>    Export/import format (default: json; accepted: json, csv).
-	-file 		<path>      Path to the WIF/CSV/JSON file (required for import)
+  -wallet    <name>    Wallet name
+  -password  <pass>    Wallet password
+  -testnet             Use testnet (default: false)
+  -amount    <amt>     Amount to send (satoshis)
+  -dest      <addr>    Destination address
+  -type      <format>  Export/import format (default: json; accepted: json, csv)
+  -file      <path>    Path to the CSV/JSON file (required for import)
 
 Examples:
-	%s -action new 		   -wallet mywallet -password secret -testnet
-	%s -action load 	   -wallet mywallet -password secret -testnet
-	%s -action send-segwit -wallet mywallet -password secret -amount 0.05 -dest tb1q...
-	%s -action export 	   -wallet mywallet -password secret -type json
-	%s -action import 	   -wallet mywallet -password secret -file <path_to_file>
+  %s -action new          -wallet mywallet -password secret -testnet
+  %s -action load         -wallet mywallet -password secret -testnet
+  %s -action send-segwit  -wallet mywallet -password secret -amount 0.05 -dest tb1q...
+  %s -action export       -wallet mywallet -password secret -type json
+  %s -action import       -wallet mywallet -password secret -file <path_to_file>
 `
 
 func main() {
