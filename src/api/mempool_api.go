@@ -129,8 +129,6 @@ func (m *MempoolApi) GetUTXOSetForAddress(address keymanager.Address) ([]types.U
 		utxos = append(utxos, utxo)
 	}
 
-	sort.Sort(types.UtxoByValue(utxos))
-
 	return utxos, nil
 }
 
@@ -232,6 +230,7 @@ func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int,
 	fee := 0
 	change := 0
 	baseSize := 44 // header (10) + 1 output di destinazione (34)
+	sort.Sort(types.UtxoByValue(pool))
 	for _, utxo := range pool {
 		accumulated += utxo.Value
 		txIn, err := transactions.NewTxIn(utxo.TxId, uint32(utxo.Vout), 0xffffffff)

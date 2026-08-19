@@ -15,3 +15,4 @@
 - [ ] System log
 - [x] Get broadcast response message
 - [x] Check if already exsits wallet with the same name. Do not overwrite.
+- [ ] Ordinare la pool di UTXO. È rimasto come prima, che ordino per ciacun indirizzo
