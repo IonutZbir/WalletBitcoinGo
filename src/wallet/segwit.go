@@ -10,7 +10,6 @@ import (
 	"wallet-bitcoin/src/utils"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -43,32 +42,6 @@ func (w *Wallet) buildInputsSegwit(amount int, core bool) ([]api.TxInBuild, int,
 		return w.BtcCore.GetInputs(amount, addresses)
 	}
 	return w.Mempool.GetInputs(amount, addresses)
-}
-
-func (w *Wallet) buildOutputsSegwit(amount int64, change int64, destAddr string, changeAddr keymanager.Address) ([]transactions.TxOut, error) {
-
-	addrDestDecoded, err := btcutil.DecodeAddress(destAddr, &chaincfg.TestNet3Params)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode the destination address: %v", err)
-	}
-	pkScript, err := txscript.PayToAddrScript(addrDestDecoded)
-	if err != nil {
-		return nil, fmt.Errorf("could not build destination pkScript: %v", err)
-	}
-	myOutput := transactions.NewTxOut(amount, pkScript)
-
-	addrChangeDecoded, err := btcutil.DecodeAddress(changeAddr.Address, &chaincfg.TestNet3Params)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode the change address: %v", err)
-	}
-
-	pkScriptChange, err := txscript.PayToAddrScript(addrChangeDecoded)
-	if err != nil {
-		return nil, fmt.Errorf("could not build change pkScript: %v", err)
-	}
-	myOutputChange := transactions.NewTxOut(change, pkScriptChange)
-
-	return []transactions.TxOut{myOutput, myOutputChange}, nil
 }
 
 /*
@@ -191,7 +164,7 @@ func (w *Wallet) SendSegwit(amount int, destAddr string, core bool) (string, err
 		return "", fmt.Errorf("could not get change address: %v", err)
 	}
 
-	outputs, err := w.buildOutputsSegwit(int64(amount), int64(change), destAddr, changeAddr)
+	outputs, err := w.buildOutputs(int64(amount), int64(change), destAddr, changeAddr)
 	if err != nil {
 		return "", fmt.Errorf("could not build outputs: %v", err)
 	}

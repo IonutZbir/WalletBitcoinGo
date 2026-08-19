@@ -168,20 +168,8 @@ func (tx *Tx) ToString() string {
 }
 
 // ============================================================================
-// SCRIPTS & SIGNING
+// SIGNING
 // ============================================================================
-
-// P2PKHScript: OP_DUP OP_HASH160 <20 byte pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
-func P2PKHScript(pubKeyHash []byte) []byte {
-	var buf bytes.Buffer
-	buf.WriteByte(0x76)                  // OP_DUP
-	buf.WriteByte(0xa9)                  // OP_HASH160
-	buf.WriteByte(byte(len(pubKeyHash))) // push 20 byte
-	buf.Write(pubKeyHash)
-	buf.WriteByte(0x88) // OP_EQUALVERIFY
-	buf.WriteByte(0xac) // OP_CHECKSIG
-	return buf.Bytes()
-}
 
 // buildScriptSig: <firma+sighashtype> <pubkey compressa>
 func buildScriptSig(sig []byte, pubKey []byte) []byte {

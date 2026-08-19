@@ -222,6 +222,10 @@ func (m *MempoolApi) ComputeBalanceForAddresses(addresses map[string]keymanager.
 	return balances, nil
 }
 
+func isSegwitUTXO(utxo types.Utxo) bool {
+	return utxo.PubKeyScript.ScriptType == "v0_p2wpkh"
+}
+
 // selectInputs esegue la coin selection su un pool di UTXO già aggregato,
 // indipendentemente da quale indirizzo li abbia originati.
 func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int, int, error) {
@@ -231,6 +235,8 @@ func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int,
 	change := 0
 	baseSize := 44 // header (10) + 1 output di destinazione (34)
 	sort.Sort(types.UtxoByValue(pool))
+	countUtxoLegacy := 0
+	countUtxoSegwit := 0
 	for _, utxo := range pool {
 		accumulated += utxo.Value
 		txIn, err := transactions.NewTxIn(utxo.TxId, uint32(utxo.Vout), 0xffffffff)
@@ -240,7 +246,13 @@ func selectInputs(pool []types.Utxo, amount int, feeRate int) ([]TxInBuild, int,
 
 		selectedInputs = append(selectedInputs, TxInBuild{TxIn: txIn, PubKeyScript: utxo.PubKeyScript, PrivateKey: utxo.PrivateKey, Amount: int64(utxo.Value)})
 
-		currentSize := baseSize + (len(selectedInputs) * 148)
+		if isSegwitUTXO(utxo) {
+			countUtxoSegwit++
+		} else {
+			countUtxoLegacy++
+		}
+
+		currentSize := baseSize + (countUtxoLegacy * 148) + (countUtxoSegwit * 68)
 		fee = currentSize * feeRate
 
 		if accumulated >= amount+fee {

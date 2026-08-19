@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 func (w *Wallet) buildInputsLegacy(amount int, core bool) ([]api.TxInBuild, int, int, error) {
@@ -32,20 +33,38 @@ func (w *Wallet) buildInputsLegacy(amount int, core bool) ([]api.TxInBuild, int,
 	return w.Mempool.GetInputs(amount, addresses)
 }
 
-func (w *Wallet) buildOutputsLegacy(amount int, change int, destAddr string, changeAddr keymanager.Address) ([]transactions.TxOut, error) {
-
+func (w *Wallet) buildOutputs(amount int64, change int64, destAddr string, changeAddr keymanager.Address) ([]transactions.TxOut, error) {
+	// 1. Output Principale
 	addrDestDecoded, err := btcutil.DecodeAddress(destAddr, &chaincfg.TestNet3Params)
 	if err != nil {
-		return nil, fmt.Errorf("could not decode the destination address: %v", err)
+		return nil, fmt.Errorf("could not decode destination address: %v", err)
 	}
-	pkScript := transactions.P2PKHScript(addrDestDecoded.ScriptAddress())
 
-	myOutput := transactions.NewTxOut(int64(amount), pkScript)
+	pkScriptDest, err := txscript.PayToAddrScript(addrDestDecoded)
+	if err != nil {
+		return nil, fmt.Errorf("could not build destination pkScript: %v", err)
+	}
 
-	pkScriptChange := transactions.P2PKHScript(changeAddr.PubKeyHash)
+	outputs := []transactions.TxOut{
+		transactions.NewTxOut(amount, pkScriptDest),
+	}
 
-	myOutputChange := transactions.NewTxOut(int64(change), pkScriptChange)
-	return []transactions.TxOut{myOutput, myOutputChange}, nil
+	// 2. Output di Resto (solo se necessario)
+	if change > 0 {
+		addrChangeDecoded, err := btcutil.DecodeAddress(changeAddr.Address, &chaincfg.TestNet3Params)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode change address: %v", err)
+		}
+
+		pkScriptChange, err := txscript.PayToAddrScript(addrChangeDecoded)
+		if err != nil {
+			return nil, fmt.Errorf("could not build change pkScript: %v", err)
+		}
+
+		outputs = append(outputs, transactions.NewTxOut(change, pkScriptChange))
+	}
+
+	return outputs, nil
 }
 
 func (w *Wallet) signInputsLegacy(tx *transactions.Tx, inputsBuild []api.TxInBuild) error {
@@ -82,7 +101,7 @@ func (w *Wallet) SendLegacyTx(amount int, core bool, destAddr string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("could not get change address: %v", err)
 	}
-	outputs, err := w.buildOutputsLegacy(amount, change, destAddr, changeAddr)
+	outputs, err := w.buildOutputs(int64(amount), int64(change), destAddr, changeAddr)
 	if err != nil {
 		return "", fmt.Errorf("could not build outputs: %v", err)
 	}
