@@ -16,3 +16,4 @@
 - [x] Get broadcast response message
 - [x] Check if already exsits wallet with the same name. Do not overwrite.
 - [x] Ordinare la pool di UTXO. È rimasto come prima, che ordino per ciacun indirizzo
+- [ ] Aggiungere ulteriori comandi alla CLI, tipo: get wallets
